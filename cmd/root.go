@@ -31,6 +31,7 @@ func Execute() {
 
 func init() {
 	rootCmd.AddCommand(build.NewCommandCurrent())
+	rootCmd.AddCommand(build.NewCommandList())
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
