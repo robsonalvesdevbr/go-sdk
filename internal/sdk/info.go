@@ -1,8 +1,11 @@
 package sdk
 
 import (
-	"bufio"
-	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"os/exec"
 	"regexp"
 	"sort"
@@ -25,38 +28,75 @@ func GetSystemGoVersion() (string, error) {
 
 // GetUseLocalGoVersion is a placeholder function that simulates retrieving the local Go version.
 func GetUseLocalGoVersion() (string, error) {
-	cmd := exec.Command("which", "go")
-	output, err := cmd.Output()
+	// Use exec.LookPath to find the `go` executable in a cross-platform way
+	path, err := exec.LookPath("go")
 	if err != nil {
 		return "", err
 	}
 
-	// Clean up the output by removing the newline character at the end
-	cleanOutput := strings.TrimSpace(string(output))
-	return cleanOutput, nil
+	return path, nil
 }
 
 // GetListOfGoVersions is a placeholder function that simulates retrieving a list of available Go versions.
 func GetListOfGoVersions() ([]string, error) {
-	// 1. Equivalent to: git ls-remote https://github.com/golang/go
-	cmd := exec.Command("git", "ls-remote", "--tags", "--refs", "https://github.com/golang/go", "main", "go*")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, err
-	}
+	// Use GitHub API to list tags so we don't require `git` on the host.
+	// Optional: set GITHUB_TOKEN env var to increase rate limits.
+	client := &http.Client{}
+	perPage := 100
+	page := 1
+	tagRegex := regexp.MustCompile(`^go\d+\.\d+\.\d+$`)
+	versions := []string{}
+	seen := map[string]bool{}
 
-	// 2. Equivalent to: egrep, awk, and sed
-	// Matches lines ending with refs/tags/goX.Y.Z and captures the goX.Y.Z part
-	tagRegex := regexp.MustCompile(`refs/tags/(go\d+\.\d+\.\d+)$`)
-	var versions []string
+	token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
 
-	scanner := bufio.NewScanner(bytes.NewReader(output))
-	for scanner.Scan() {
-		line := scanner.Text()
-		matches := tagRegex.FindStringSubmatch(line)
-		if len(matches) > 1 {
-			versions = append(versions, matches[1])
+	for {
+		url := fmt.Sprintf("https://api.github.com/repos/golang/go/tags?per_page=%d&page=%d", perPage, page)
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, err
 		}
+		if token != "" {
+			req.Header.Set("Authorization", "token "+token)
+		}
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("github API returned %d: %s", resp.StatusCode, string(body))
+		}
+
+		var items []struct {
+			Name string `json:"name"`
+		}
+		dec := json.NewDecoder(resp.Body)
+		if err := dec.Decode(&items); err != nil {
+			resp.Body.Close()
+			return nil, err
+		}
+		resp.Body.Close()
+
+		if len(items) == 0 {
+			break
+		}
+
+		for _, it := range items {
+			if tagRegex.MatchString(it.Name) && !seen[it.Name] {
+				versions = append(versions, it.Name)
+				seen[it.Name] = true
+			}
+		}
+
+		if len(items) < perPage {
+			break
+		}
+		page++
 	}
 
 	// 3. Equivalent to: sort -V
