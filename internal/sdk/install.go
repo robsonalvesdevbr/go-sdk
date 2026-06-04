@@ -26,6 +26,28 @@ func LatestVersion() (string, error) {
 	return strings.TrimSpace(lines[0]), nil
 }
 
+func InstallVersion(version string) error {
+	if version == "" {
+		var err error
+		version, err = LatestVersion()
+		if err != nil {
+			return err
+		}
+	}
+	url := "https://go.dev/dl/" + version + ".linux-amd64.tar.gz"
+	filename := version + ".tar.gz"
+
+	if err := DownloadFile(filename, url); err != nil {
+		return err
+	}
+
+	//if err := ExtractTarGz(filename, "/usr/local"); err != nil {
+	//	return err
+	//}
+
+	return os.Remove(filename)
+}
+
 func DownloadFile(filename, url string) error {
 	resp, err := http.Get(url)
 	if err != nil {

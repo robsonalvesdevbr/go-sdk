@@ -5,26 +5,68 @@ package build
 
 import (
 	"fmt"
+	"slices"
 
+	"github.com/robsonalvesdevbr/go-sdk/internal/sdk"
 	"github.com/spf13/cobra"
 )
 
-// installCmd represents the install command
-var installCmd = &cobra.Command{
-	Use:   "install",
-	Short: "Install Latest version of Go",
-	Long:  `Install Latest version of Go. This command will download and install the latest version of Go on your system.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("install called")
-	},
-}
+var installCmd *cobra.Command
 
-func init() {
+func NewCommandInstall(versions *[]string) *cobra.Command {
+	installCmd = newCreateCmd(versions)
 	installCmd.Flags().BoolP("latest", "l", false, "Install latest version of Go")
 	installCmd.Flags().StringP("version-number", "v", "", "Version number to install (e.g. 1.16.3)")
 	installCmd.MarkFlagsMutuallyExclusive("latest", "version-number")
+	return installCmd
 }
 
-func NewCommandInstall() *cobra.Command {
-	return installCmd
+func init() {
+}
+
+type RunEFunc func(cmd *cobra.Command, args []string) error
+
+func newCreateCmd(versions *[]string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "install",
+		Short: "Install a specific version of Go",
+		Long:  `Install a specific version of Go. This command will download and install the specified version of Go on your system.`,
+		RunE:  runCreateInstall(versions),
+	}
+	return cmd
+}
+
+func runCreateInstall(versions *[]string) RunEFunc {
+	return func(cmd *cobra.Command, args []string) error {
+		latest, _ := cmd.Flags().GetBool("latest")
+		versionNumber := cmd.Flag("version-number").Value.String()
+
+		if !slices.Contains(*versions, fmt.Sprintf("go%s", versionNumber)) {
+			return fmt.Errorf("version %s is not available", versionNumber)
+		}
+
+		if latest {
+			fmt.Println("Installing latest version of Go...")
+			err := sdk.InstallVersion("")
+			if err != nil {
+				fmt.Printf("Error installing Go: %v\n", err)
+				return err
+			} else {
+				fmt.Println("Go installed successfully!")
+			}
+		} else if versionNumber != "" {
+			fmt.Printf("Installing Go version %s...\n", versionNumber)
+			err := sdk.InstallVersion(fmt.Sprintf("go%s", versionNumber))
+			if err != nil {
+				fmt.Printf("Error installing Go: %v\n", err)
+				return err
+			} else {
+				fmt.Println("Go installed successfully!")
+			}
+		} else {
+			fmt.Println("Please specify either --latest or --version-number flag.")
+			return fmt.Errorf("please specify either --latest or --version-number flag")
+		}
+		return nil
+	}
 }
