@@ -32,6 +32,6 @@ var ListVersion []string
 func init() {
 	ListVersion, _ = sdk.GetListOfGoVersions()
 	rootCmd.AddCommand(build.NewCommandCurrent())
-	rootCmd.AddCommand(build.NewCommandList())
+	rootCmd.AddCommand(build.NewCommandList(&ListVersion))
 	rootCmd.AddCommand(build.NewCommandInstall(&ListVersion))
 }

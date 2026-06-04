@@ -7,26 +7,36 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/robsonalvesdevbr/go-sdk/internal/cli"
 	"github.com/robsonalvesdevbr/go-sdk/internal/sdk"
 	"github.com/spf13/cobra"
 )
 
 // listCmd represents the list command
-var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List stable Go versions",
-	Long:  `Lists all stable Go versions available on the official Go repository. The current version installed on the system will be marked with "(current)".`,
-	Run: func(cmd *cobra.Command, args []string) {
-		versions, err := sdk.GetListOfGoVersions()
-		if err != nil {
-			cmd.Println("Error:", err)
-			return
-		}
-		for _, v := range versions {
+var listCmd *cobra.Command
+
+func NewCommandList(versions *[]string) *cobra.Command {
+	listCmd = newCreateCmdList(versions)
+	return listCmd
+}
+
+func newCreateCmdList(versions *[]string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List stable Go versions",
+		Long:  `Lists all stable Go versions available on the official Go repository. The current version installed on the system will be marked with "(current)".`,
+		RunE:  runCreateList(versions),
+	}
+	return cmd
+}
+
+func runCreateList(versions *[]string) cli.RunEFunc {
+	return func(cmd *cobra.Command, args []string) error {
+		for _, v := range *versions {
 			version, err := sdk.GetSystemGoVersion()
 			if err != nil {
 				cmd.Println("Error:", err)
-				return
+				return err
 			}
 
 			if strings.Contains(version, v) {
@@ -35,12 +45,6 @@ var listCmd = &cobra.Command{
 
 			cmd.Println(v)
 		}
-	},
-}
-
-func init() {
-}
-
-func NewCommandList() *cobra.Command {
-	return listCmd
+		return nil
+	}
 }

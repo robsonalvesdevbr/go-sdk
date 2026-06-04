@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/robsonalvesdevbr/go-sdk/internal/cli"
 	"github.com/robsonalvesdevbr/go-sdk/internal/sdk"
 	"github.com/spf13/cobra"
 )
@@ -14,19 +15,14 @@ import (
 var installCmd *cobra.Command
 
 func NewCommandInstall(versions *[]string) *cobra.Command {
-	installCmd = newCreateCmd(versions)
+	installCmd = newCreateCmdInstall(versions)
 	installCmd.Flags().BoolP("latest", "l", false, "Install latest version of Go")
 	installCmd.Flags().StringP("version-number", "v", "", "Version number to install (e.g. 1.16.3)")
 	installCmd.MarkFlagsMutuallyExclusive("latest", "version-number")
 	return installCmd
 }
 
-func init() {
-}
-
-type RunEFunc func(cmd *cobra.Command, args []string) error
-
-func newCreateCmd(versions *[]string) *cobra.Command {
+func newCreateCmdInstall(versions *[]string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "Install a specific version of Go",
@@ -36,7 +32,7 @@ func newCreateCmd(versions *[]string) *cobra.Command {
 	return cmd
 }
 
-func runCreateInstall(versions *[]string) RunEFunc {
+func runCreateInstall(versions *[]string) cli.RunEFunc {
 	return func(cmd *cobra.Command, args []string) error {
 		latest, _ := cmd.Flags().GetBool("latest")
 		versionNumber := cmd.Flag("version-number").Value.String()
