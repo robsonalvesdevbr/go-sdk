@@ -41,9 +41,9 @@ func InstallVersion(version string) error {
 		return err
 	}
 
-	//if err := ExtractTarGz(filename, "/usr/local"); err != nil {
-	//	return err
-	//}
+	if err := ExtractTarGz(filename, "/usr/local"); err != nil {
+		return err
+	}
 
 	return os.Remove(filename)
 }
