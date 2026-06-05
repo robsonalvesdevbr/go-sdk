@@ -10,13 +10,14 @@ import (
 	"slices"
 
 	"github.com/robsonalvesdevbr/go-sdk/internal/cli"
+	"github.com/robsonalvesdevbr/go-sdk/internal/entity"
 	"github.com/robsonalvesdevbr/go-sdk/internal/sdk"
 	"github.com/spf13/cobra"
 )
 
 var installCmd *cobra.Command
 
-func NewCommandInstall(versions *[]string) *cobra.Command {
+func NewCommandInstall(versions *[]entity.GoVersion) *cobra.Command {
 	installCmd = newCreateCmdInstall(versions)
 	installCmd.Flags().BoolP("latest", "l", false, "Install latest version of Go")
 	installCmd.Flags().StringP("version-number", "v", "", "Version number to install (e.g. 1.16.3)")
@@ -25,7 +26,7 @@ func NewCommandInstall(versions *[]string) *cobra.Command {
 	return installCmd
 }
 
-func newCreateCmdInstall(versions *[]string) *cobra.Command {
+func newCreateCmdInstall(versions *[]entity.GoVersion) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "Install a specific version of Go",
@@ -35,7 +36,7 @@ func newCreateCmdInstall(versions *[]string) *cobra.Command {
 	return cmd
 }
 
-func runCreateInstall(versions *[]string) cli.RunEFunc {
+func runCreateInstall(versions *[]entity.GoVersion) cli.RunEFunc {
 	return func(cmd *cobra.Command, args []string) error {
 		latest, _ := cmd.Flags().GetBool("latest")
 		versionNumber := cmd.Flag("version-number").Value.String()
@@ -47,7 +48,7 @@ func runCreateInstall(versions *[]string) cli.RunEFunc {
 			fmt.Println("Installing latest version of Go...")
 			version = ""
 		case versionNumber != "":
-			if !slices.Contains(*versions, fmt.Sprintf("go%s", versionNumber)) {
+			if !slices.Contains(*versions, entity.GoVersion{Version: fmt.Sprintf("go%s", versionNumber)}) {
 				return fmt.Errorf("version %s is not available", versionNumber)
 			}
 			fmt.Printf("Installing Go version %s...\n", versionNumber)

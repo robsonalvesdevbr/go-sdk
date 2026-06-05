@@ -8,9 +8,12 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/robsonalvesdevbr/go-sdk/internal/entity"
 )
 
 // GetSystemGoVersion executes 'go version' in the host OS and returns the output.
@@ -116,6 +119,48 @@ func GetListOfGoVersions() ([]string, error) {
 	})
 
 	return versions, nil
+}
+
+// GetListOfGoVersions is a placeholder function that simulates retrieving a list of available Go versions.
+func GetListOfGoVersionsV2() ([]entity.GoVersion, error) {
+	client := &http.Client{}
+	url := "https://go.dev/dl/?mode=json&include=all"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("github API returned %d: %s", resp.StatusCode, string(body))
+	}
+	var items []entity.GoVersion
+
+	dec := json.NewDecoder(resp.Body)
+	if err := dec.Decode(&items); err != nil {
+		resp.Body.Close()
+		return nil, err
+	}
+	resp.Body.Close()
+	items = filterStableVersions(items)
+	slices.Reverse(items)
+	return items, nil
+}
+
+func filterStableVersions(versions []entity.GoVersion) []entity.GoVersion {
+	stable := []entity.GoVersion{}
+	for _, v := range versions {
+		if v.Stable {
+			stable = append(stable, v)
+		}
+	}
+	return stable
 }
 
 // parseVersion converts a version string like "go1.20.1" into a slice of integers [1, 20, 1].

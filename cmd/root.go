@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/robsonalvesdevbr/go-sdk/internal/cli/build"
+	"github.com/robsonalvesdevbr/go-sdk/internal/entity"
 	"github.com/robsonalvesdevbr/go-sdk/internal/sdk"
 	"github.com/spf13/cobra"
 )
@@ -27,10 +28,10 @@ func Execute() {
 	}
 }
 
-var ListVersion []string
+var ListVersion []entity.GoVersion
 
 func init() {
-	ListVersion, _ = sdk.GetListOfGoVersions()
+	ListVersion, _ = sdk.GetListOfGoVersionsV2()
 	rootCmd.AddCommand(build.NewCommandCurrent())
 	rootCmd.AddCommand(build.NewCommandList(&ListVersion))
 	rootCmd.AddCommand(build.NewCommandInstall(&ListVersion))
