@@ -40,6 +40,32 @@ go build -o go-sdk ./cmd/go-sdk
 go run ./cmd/go-sdk
 ```
 
+## Running with sudo
+
+Installing a Go version into `/usr/local` requires root, but `sudo` runs with the root user's
+`secure_path` (set in `/etc/sudoers`), which usually does **not** include your `go` toolchain or
+`$GOPATH/bin`. That is why commands like `sudo go run ...` or `sudo go-sdk ...` may fail with
+`'go': command not found` or `'go-sdk': command not found`.
+
+Use one of the following instead:
+
+```bash
+# 1. Build a self-contained binary and run that binary with sudo (recommended)
+go build -o go-sdk ./cmd/go-sdk
+sudo ./go-sdk install -l
+
+# 2. After `go install`, call the binary by its absolute path
+go install github.com/robsonalvesdevbr/go-sdk/cmd/go-sdk@latest
+sudo "$(go env GOPATH)/bin/go-sdk" install -l
+
+# 3. Preserve your PATH when elevating (keeps `go` / `go-sdk` resolvable)
+sudo env "PATH=$PATH" go run ./cmd/go-sdk install -l
+sudo env "PATH=$PATH" go-sdk install -l
+```
+
+> Tip: if you'd rather avoid `sudo` entirely, install into a writable directory with
+> `--dir` / `GO_SDK_INSTALL_DIR` (see [`install`](#install)).
+
 ## Usage
 
 ```text
