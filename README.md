@@ -130,16 +130,28 @@ sudo go-sdk install --version-number 1.24.1
 sudo go-sdk install -v 1.24.1
 ```
 
+Install without root into a custom directory (no `sudo` needed):
+
+```bash
+go-sdk install --latest --dir "$HOME/.local"
+# or via environment variable
+GO_SDK_INSTALL_DIR="$HOME/.local" go-sdk install --latest
+```
+
+When using a custom directory, add `<dir>/go/bin` to your `PATH` (e.g. `$HOME/.local/go/bin`).
+
 Flags:
 
 ```text
+  -d, --dir string              Target install directory (default /usr/local or $GO_SDK_INSTALL_DIR)
   -h, --help                    help for install
   -l, --latest                  Install latest version of Go
   -v, --version-number string   Version number to install (e.g. 1.16.3)
 ```
 
 > `--latest` and `--version-number` are mutually exclusive. If the requested version is not present
-> in the available list, the command fails with `version <n> is not available`.
+> in the available list, the command fails with `version <n> is not available`. Before downloading,
+> `go-sdk` checks that the target directory is writable and fails fast with guidance if it is not.
 
 ### `completion`
 
@@ -152,17 +164,19 @@ go-sdk completion fish | source
 
 ## Environment variables
 
-| Variable       | Purpose                                                                     |
-| -------------- | --------------------------------------------------------------------------- |
-| `GITHUB_TOKEN` | Optional GitHub token used when listing versions, to raise the rate limit.  |
+| Variable              | Purpose                                                                          |
+| --------------------- | -------------------------------------------------------------------------------- |
+| `GITHUB_TOKEN`        | Optional GitHub token used when listing versions, to raise the rate limit.        |
+| `GO_SDK_INSTALL_DIR`  | Optional install destination (default `/usr/local`). The `--dir` flag overrides it. |
 
 ## How it works
 
 - **Latest version** is resolved from `https://go.dev/VERSION?m=text`.
 - **Available versions** come from the `golang/go` repository tags via the GitHub API, sorted by
   semantic version.
-- **Installation** downloads `https://go.dev/dl/<version>.linux-amd64.tar.gz`, extracts it into
-  `/usr/local`, and removes the temporary archive.
+- **Installation** verifies the target directory is writable, downloads
+  `https://go.dev/dl/<version>.linux-amd64.tar.gz`, extracts it into the install directory
+  (`/usr/local` by default), and removes the temporary archive.
 - The current version is read by executing `go version` on the host.
 
 ## Project structure
@@ -188,7 +202,8 @@ go-sdk completion fish | source
 ## Limitations & notes
 
 - **Linux/amd64 only** — the download URL and the `/usr/local` install target are hardcoded.
-- **Requires privileges** to write into `/usr/local` (run with `sudo`).
+- **Requires privileges** to write into `/usr/local` (run with `sudo`), or use `--dir` /
+  `GO_SDK_INSTALL_DIR` to install into a writable directory without root.
 - **Network on startup** — every invocation fetches the version list from the GitHub API during
   initialization; set `GITHUB_TOKEN` to avoid rate limiting.
 

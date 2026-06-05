@@ -3,12 +3,44 @@ package sdk
 import (
 	"archive/tar"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// DefaultInstallDir is the destination used when no override is provided.
+const DefaultInstallDir = "/usr/local"
+
+// ResolveInstallDir picks the install destination, preferring an explicit
+// override, then the GO_SDK_INSTALL_DIR environment variable, then the default.
+func ResolveInstallDir(override string) string {
+	if override != "" {
+		return override
+	}
+	if dir := strings.TrimSpace(os.Getenv("GO_SDK_INSTALL_DIR")); dir != "" {
+		return dir
+	}
+	return DefaultInstallDir
+}
+
+// ensureWritable verifies we can actually write into dir before downloading
+// anything, by creating and removing a temporary file. The returned error wraps
+// fs.ErrPermission when access is denied, so callers can detect it with errors.Is.
+func ensureWritable(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("cannot create %s: %w", dir, err)
+	}
+
+	f, err := os.CreateTemp(dir, ".go-sdk-*")
+	if err != nil {
+		return fmt.Errorf("cannot write to %s: %w", dir, err)
+	}
+	f.Close()
+	return os.Remove(f.Name())
+}
 
 func LatestVersion() (string, error) {
 	resp, err := http.Get("https://go.dev/VERSION?m=text")
@@ -26,7 +58,7 @@ func LatestVersion() (string, error) {
 	return strings.TrimSpace(lines[0]), nil
 }
 
-func InstallVersion(version string) error {
+func InstallVersion(version, dir string) error {
 	if version == "" {
 		var err error
 		version, err = LatestVersion()
@@ -34,6 +66,14 @@ func InstallVersion(version string) error {
 			return err
 		}
 	}
+
+	dir = ResolveInstallDir(dir)
+
+	// Fail fast (before the ~150MB download) if we cannot write to the target.
+	if err := ensureWritable(dir); err != nil {
+		return err
+	}
+
 	url := "https://go.dev/dl/" + version + ".linux-amd64.tar.gz"
 	filename := version + ".tar.gz"
 
@@ -41,7 +81,7 @@ func InstallVersion(version string) error {
 		return err
 	}
 
-	if err := ExtractTarGz(filename, "/usr/local"); err != nil {
+	if err := ExtractTarGz(filename, dir); err != nil {
 		return err
 	}
 
