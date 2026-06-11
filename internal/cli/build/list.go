@@ -6,6 +6,8 @@ package build
 import (
 	"fmt"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 
 	"github.com/robsonalvesdevbr/go-sdk/internal/cli"
@@ -24,36 +26,85 @@ func NewCommandList(versions *[]entity.GoVersion) *cobra.Command {
 	return listCmd
 }
 
+// defaultMinorCount limits the default output to the newest minor release families (e.g. go1.26.x).
+const defaultMinorCount = 5
+
 func newCreateCmdList(versions *[]entity.GoVersion) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List stable Go versions",
-		Long:  `Lists all stable Go versions available on the official Go repository. The current version installed on the system will be marked with "(current)".`,
+		Long:  `Lists stable Go versions available on the official Go repository, newest first. By default only the latest minor releases are shown; use --all to list every version. The current version installed on the system will be marked with "(current)".`,
 		RunE:  runCreateList(versions),
 	}
+	cmd.Flags().BoolP("all", "a", false, "list every stable Go version instead of only the latest minor releases")
 	return cmd
 }
 
 func runCreateList(versions *[]entity.GoVersion) cli.RunEFunc {
 	return func(cmd *cobra.Command, args []string) error {
-		for _, v := range *versions {
-			version, err := sdk.GetSystemGoVersion()
-			if err != nil {
-				cmd.Println("Error:", err)
-				return err
-			}
+		version, err := sdk.GetSystemGoVersion()
+		if err != nil {
+			cmd.Println("Error:", err)
+			return err
+		}
 
-			re := regexp.MustCompile(`go\d+\.\d+(?:\.\d+)?`)
-			version = re.FindString(version)
+		re := regexp.MustCompile(`go\d+\.\d+(?:\.\d+)?`)
+		version = re.FindString(version)
+		currentVersion := "v" + strings.TrimPrefix(version, "go")
 
-			currentVersion := "v" + strings.TrimPrefix(version, "go")
+		showAll, err := cmd.Flags().GetBool("all")
+		if err != nil {
+			return err
+		}
+
+		sorted := make([]entity.GoVersion, len(*versions))
+		copy(sorted, *versions)
+		sort.Slice(sorted, func(i, j int) bool {
+			vi := "v" + strings.TrimPrefix(sorted[i].Version, "go")
+			vj := "v" + strings.TrimPrefix(sorted[j].Version, "go")
+			return semver.Compare(vi, vj) > 0
+		})
+
+		cells := make([]string, 0, len(sorted))
+		width := 0
+		minors := []string{}
+		for _, v := range sorted {
 			versionOfList := "v" + strings.TrimPrefix(v.Version, "go")
-
-			if semver.Compare(currentVersion, versionOfList) == 0 {
-				v = entity.GoVersion{Version: fmt.Sprintf("%s (current)", v.Version)}
+			if !showAll {
+				minor := semver.MajorMinor(versionOfList)
+				if !slices.Contains(minors, minor) {
+					// sorted is descending, so every version after this one is older
+					if len(minors) == defaultMinorCount {
+						break
+					}
+					minors = append(minors, minor)
+				}
 			}
 
-			cmd.Println(v.Version)
+			cell := v.Version
+			if semver.Compare(currentVersion, versionOfList) == 0 {
+				cell = fmt.Sprintf("%s (current)", v.Version)
+			}
+			if len(cell) > width {
+				width = len(cell)
+			}
+			cells = append(cells, cell)
+		}
+
+		out := cmd.OutOrStdout()
+		const columns = 5
+		for i := 0; i < len(cells); i += columns {
+			end := min(i+columns, len(cells))
+			var sb strings.Builder
+			for _, cell := range cells[i:end] {
+				fmt.Fprintf(&sb, "%-*s", width+2, cell)
+			}
+			fmt.Fprintln(out, strings.TrimRight(sb.String(), " "))
+		}
+
+		if !showAll {
+			// hint goes to stderr so piped output stays clean
+			cmd.Printf("\nShowing the latest %d minor releases. Use --all to list every version.\n", defaultMinorCount)
 		}
 		return nil
 	}
