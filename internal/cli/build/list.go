@@ -5,6 +5,8 @@ package build
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"regexp"
 	"slices"
 	"sort"
@@ -28,6 +30,25 @@ func NewCommandList(versions *[]entity.GoVersion) *cobra.Command {
 
 // defaultMinorCount limits the default output to the newest minor release families (e.g. go1.26.x).
 const defaultMinorCount = 5
+
+const (
+	colorGreen = "\033[32m"
+	colorReset = "\033[0m"
+)
+
+// isTerminal reports whether w is an interactive terminal, so ANSI colors are
+// only emitted when a human is looking at the output (pipes stay clean).
+func isTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
 
 func newCreateCmdList(versions *[]entity.GoVersion) *cobra.Command {
 	cmd := &cobra.Command{
@@ -67,6 +88,7 @@ func runCreateList(versions *[]entity.GoVersion) cli.RunEFunc {
 
 		cells := make([]string, 0, len(sorted))
 		width := 0
+		currentIdx := -1
 		minors := []string{}
 		for _, v := range sorted {
 			versionOfList := "v" + strings.TrimPrefix(v.Version, "go")
@@ -84,6 +106,7 @@ func runCreateList(versions *[]entity.GoVersion) cli.RunEFunc {
 			cell := v.Version
 			if semver.Compare(currentVersion, versionOfList) == 0 {
 				cell = fmt.Sprintf("%s (current)", v.Version)
+				currentIdx = len(cells)
 			}
 			if len(cell) > width {
 				width = len(cell)
@@ -92,11 +115,18 @@ func runCreateList(versions *[]entity.GoVersion) cli.RunEFunc {
 		}
 
 		out := cmd.OutOrStdout()
+		useColor := isTerminal(out)
 		const columns = 5
 		for i := 0; i < len(cells); i += columns {
 			end := min(i+columns, len(cells))
 			var sb strings.Builder
-			for _, cell := range cells[i:end] {
+			for j, cell := range cells[i:end] {
+				if useColor && i+j == currentIdx {
+					// pad manually: ANSI escapes must not count toward column width
+					padding := strings.Repeat(" ", max(width+2-len(cell), 0))
+					sb.WriteString(colorGreen + cell + colorReset + padding)
+					continue
+				}
 				fmt.Fprintf(&sb, "%-*s", width+2, cell)
 			}
 			fmt.Fprintln(out, strings.TrimRight(sb.String(), " "))
