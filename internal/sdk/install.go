@@ -3,6 +3,8 @@ package sdk
 import (
 	"archive/tar"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -49,6 +51,10 @@ func LatestVersion() (string, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("fetching latest version: unexpected status %s", resp.Status)
+	}
+
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
@@ -74,35 +80,84 @@ func InstallVersion(version, dir string) error {
 		return err
 	}
 
-	url := "https://go.dev/dl/" + version + ".linux-amd64.tar.gz"
-	filename := version + ".tar.gz"
+	filename := version + ".linux-amd64.tar.gz"
+	url := "https://go.dev/dl/" + filename
 
-	if err := DownloadFile(filename, url); err != nil {
-		return err
-	}
+	// expectedSha256 is the checksum published by go.dev for this archive. It may
+	// be empty when the caller could not resolve it; in that case integrity is
+	// not verified and DownloadFile only checks transport-level success.
+	expectedSha256 := lookupSha256(version, filename)
 
-	if err := ExtractTarGz(filename, dir); err != nil {
-		return err
-	}
-
-	return os.Remove(filename)
-}
-
-func DownloadFile(filename, url string) error {
-	resp, err := http.Get(url)
+	tmpFile, err := DownloadFile(url, expectedSha256)
 	if err != nil {
 		return err
+	}
+	defer os.Remove(tmpFile)
+
+	return ExtractTarGz(tmpFile, dir)
+}
+
+// lookupSha256 returns the SHA256 published by go.dev for the given archive
+// filename, or "" if it cannot be resolved.
+func lookupSha256(version, filename string) string {
+	versions, err := GetListOfGoVersionsV2()
+	if err != nil {
+		return ""
+	}
+	for _, v := range versions {
+		if v.Version != version {
+			continue
+		}
+		for _, f := range v.Files {
+			if f.Filename == filename {
+				return f.Sha256
+			}
+		}
+	}
+	return ""
+}
+
+// DownloadFile streams url into a securely-created temporary file and returns
+// its path. When expectedSha256 is non-empty, the download is verified against
+// it and the temp file is removed on mismatch. The caller owns the returned
+// file and is responsible for removing it.
+func DownloadFile(url, expectedSha256 string) (string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", err
 	}
 	defer resp.Body.Close()
 
-	file, err := os.Create(filename)
-	if err != nil {
-		return err
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("downloading %s: unexpected status %s", url, resp.Status)
 	}
-	defer file.Close()
 
-	_, err = io.Copy(file, resp.Body)
-	return err
+	file, err := os.CreateTemp("", "go-sdk-*.tar.gz")
+	if err != nil {
+		return "", err
+	}
+	tmpPath := file.Name()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(file, hasher), resp.Body); err != nil {
+		file.Close()
+		os.Remove(tmpPath)
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		os.Remove(tmpPath)
+		return "", err
+	}
+
+	if expectedSha256 != "" {
+		got := hex.EncodeToString(hasher.Sum(nil))
+		if !strings.EqualFold(got, expectedSha256) {
+			os.Remove(tmpPath)
+			return "", fmt.Errorf("checksum mismatch for %s: expected %s, got %s", url, expectedSha256, got)
+		}
+	}
+
+	return tmpPath, nil
 }
 
 func ExtractTarGz(src, dst string) error {
@@ -120,6 +175,8 @@ func ExtractTarGz(src, dst string) error {
 
 	tr := tar.NewReader(gzr)
 
+	cleanDst := filepath.Clean(dst)
+
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -129,11 +186,18 @@ func ExtractTarGz(src, dst string) error {
 			return err
 		}
 
-		target := filepath.Join(dst, hdr.Name)
+		// Guard against path traversal ("Zip Slip"): reject any entry whose
+		// resolved path escapes the destination directory.
+		target := filepath.Join(cleanDst, hdr.Name)
+		if target != cleanDst && !strings.HasPrefix(target, cleanDst+string(os.PathSeparator)) {
+			return fmt.Errorf("refusing to extract %q: path escapes %s", hdr.Name, cleanDst)
+		}
+
+		mode := os.FileMode(hdr.Mode).Perm()
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, os.FileMode(hdr.Mode)); err != nil {
+			if err := os.MkdirAll(target, mode); err != nil {
 				return err
 			}
 
@@ -145,7 +209,7 @@ func ExtractTarGz(src, dst string) error {
 			f, err := os.OpenFile(
 				target,
 				os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
-				os.FileMode(hdr.Mode),
+				mode,
 			)
 			if err != nil {
 				return err

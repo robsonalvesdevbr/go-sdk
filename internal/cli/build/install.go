@@ -48,11 +48,12 @@ func runCreateInstall(versions *[]entity.GoVersion) cli.RunEFunc {
 			fmt.Println("Installing latest version of Go...")
 			version = ""
 		case versionNumber != "":
-			if !slices.Contains(*versions, entity.GoVersion{Version: fmt.Sprintf("go%s", versionNumber)}) {
+			wanted := fmt.Sprintf("go%s", versionNumber)
+			if !slices.ContainsFunc(*versions, func(v entity.GoVersion) bool { return v.Version == wanted }) {
 				return fmt.Errorf("version %s is not available", versionNumber)
 			}
 			fmt.Printf("Installing Go version %s...\n", versionNumber)
-			version = fmt.Sprintf("go%s", versionNumber)
+			version = wanted
 		default:
 			fmt.Println("Please specify either --latest or --version-number flag.")
 			return fmt.Errorf("please specify either --latest or --version-number flag")
